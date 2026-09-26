@@ -2,6 +2,7 @@
 
 load("//autoconf:autoconf_toolchain.bzl", autoconf = "autoconf_cache")
 load("//autoconf:checks.bzl", "checks")
+load(":replacement.bzl", "addchdir_replacement_check")
 
 autoconf(
     name = "ac_cv_func_posix_spawn_file_actions_addchdir_np",
@@ -75,12 +76,7 @@ int main(void) {
             if_false = "0",
             if_true = "1",
         ),
-        checks.AC_SUBST(
-            "REPLACE_POSIX_SPAWN_FILE_ACTIONS_ADDCHDIR",
-            condition = "ac_cv_func_posix_spawn_file_actions_addchdir",
-            if_false = "0",
-            if_true = "1",
-        ),
+        addchdir_replacement_check(),
     ],
     visibility = ["//visibility:public"],
     deps = [
