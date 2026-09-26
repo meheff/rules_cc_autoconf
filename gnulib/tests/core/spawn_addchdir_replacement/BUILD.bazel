@@ -1,80 +1,175 @@
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//autoconf:autoconf_hdr.bzl", "autoconf_hdr")
 load("//autoconf:autoconf_toolchain.bzl", "autoconf_cache")
 load("//autoconf:checks.bzl", "checks")
 load("//autoconf/tests:diff_test.bzl", "diff_test")
 load("//gnulib/m4/posix_spawn_faction_addchdir:replacement.bzl", "addchdir_replacement_check")
 
-write_file(
-    name = "template",
-    out = "subst.h.in",
-    content = ["#define REPLACE_ADDCHDIR @REPLACE_POSIX_SPAWN_FILE_ACTIONS_ADDCHDIR@"],
+# A missing addchdir needs no symbol replacement when native spawn types are used.
+autoconf_cache(
+    name = "missing_native_types_inputs",
+    checks = [
+        checks.AC_TRY_COMPILE(
+            name = "ac_cv_func_posix_spawn_file_actions_addchdir",
+            code = "#error Simulated missing function",
+            language = "c",
+        ),
+        checks.AC_DEFINE("REPLACE_POSIX_SPAWN", 0),
+        checks.AC_SUBST("HAVE_POSIX_SPAWN", 1),
+    ],
 )
 
-[
-    write_file(
-        name = "expected_{}".format(value),
-        out = "expected_{}.h".format(value),
-        content = ["#define REPLACE_ADDCHDIR {}".format(value)],
-    )
-    for value in [
-        0,
-        1,
-    ]
-]
+autoconf_cache(
+    name = "missing_native_types_config",
+    checks = [addchdir_replacement_check()],
+    deps = [":missing_native_types_inputs"],
+)
 
-# Missing function + replacement types is the macOS regression. Windows
-# has no native spawn API, so there is no conflicting native declaration.
-# name, addchdir available, replace spawn, native spawn available, expected
-_CASES = [
-    ("missing_native_types", 0, 0, 1, 0),
-    ("missing_replacement_types", 0, 1, 1, 1),
-    ("present_native_types", 1, 0, 1, 1),
-    ("present_replacement_types", 1, 1, 1, 1),
-    ("missing_windows_types", 0, 1, 0, 0),
-]
+autoconf_hdr(
+    name = "missing_native_types_header",
+    out = "missing_native_types.h",
+    mode = "subst",
+    template = "subst.h.in",
+    deps = [":missing_native_types_config"],
+)
 
-[
-    autoconf_cache(
-        name = name + "_inputs",
-        checks = [
-            checks.AC_TRY_COMPILE(
-                name = "ac_cv_func_posix_spawn_file_actions_addchdir",
-                code = "int main(void) { return 0; }" if present else "#error Simulated missing function",
-                language = "c",
-            ),
-            checks.AC_DEFINE("REPLACE_POSIX_SPAWN", replace_impl),
-            checks.AC_SUBST("HAVE_POSIX_SPAWN", native_spawn),
-        ],
-    )
-    for name, present, replace_impl, native_spawn, expected in _CASES
-]
+diff_test(
+    name = "missing_native_types_test",
+    file1 = "golden_native.h.in",
+    file2 = ":missing_native_types_header",
+)
 
-[
-    autoconf_cache(
-        name = name + "_config",
-        checks = [addchdir_replacement_check()],
-        deps = [":" + name + "_inputs"],
-    )
-    for name, present, replace_impl, native_spawn, expected in _CASES
-]
+# Regression: a failed addchdir probe must not mix native declarations with replacement spawn types.
+autoconf_cache(
+    name = "missing_replacement_types_inputs",
+    checks = [
+        checks.AC_TRY_COMPILE(
+            name = "ac_cv_func_posix_spawn_file_actions_addchdir",
+            code = "#error Simulated missing function",
+            language = "c",
+        ),
+        checks.AC_DEFINE("REPLACE_POSIX_SPAWN", 1),
+        checks.AC_SUBST("HAVE_POSIX_SPAWN", 1),
+    ],
+)
 
-[
-    autoconf_hdr(
-        name = name + "_header",
-        out = name + ".h",
-        mode = "subst",
-        template = ":template",
-        deps = [":" + name + "_config"],
-    )
-    for name, present, replace_impl, native_spawn, expected in _CASES
-]
+autoconf_cache(
+    name = "missing_replacement_types_config",
+    checks = [addchdir_replacement_check()],
+    deps = [":missing_replacement_types_inputs"],
+)
 
-[
-    diff_test(
-        name = name + "_test",
-        file1 = ":expected_{}".format(expected),
-        file2 = ":" + name + "_header",
-    )
-    for name, present, replace_impl, native_spawn, expected in _CASES
-]
+autoconf_hdr(
+    name = "missing_replacement_types_header",
+    out = "missing_replacement_types.h",
+    mode = "subst",
+    template = "subst.h.in",
+    deps = [":missing_replacement_types_config"],
+)
+
+diff_test(
+    name = "missing_replacement_types_test",
+    file1 = "golden_replacement.h.in",
+    file2 = ":missing_replacement_types_header",
+)
+
+# An available addchdir uses the gnulib replacement even with native spawn types.
+autoconf_cache(
+    name = "present_native_types_inputs",
+    checks = [
+        checks.AC_TRY_COMPILE(
+            name = "ac_cv_func_posix_spawn_file_actions_addchdir",
+            code = "int main(void) { return 0; }",
+            language = "c",
+        ),
+        checks.AC_DEFINE("REPLACE_POSIX_SPAWN", 0),
+        checks.AC_SUBST("HAVE_POSIX_SPAWN", 1),
+    ],
+)
+
+autoconf_cache(
+    name = "present_native_types_config",
+    checks = [addchdir_replacement_check()],
+    deps = [":present_native_types_inputs"],
+)
+
+autoconf_hdr(
+    name = "present_native_types_header",
+    out = "present_native_types.h",
+    mode = "subst",
+    template = "subst.h.in",
+    deps = [":present_native_types_config"],
+)
+
+diff_test(
+    name = "present_native_types_test",
+    file1 = "golden_replacement.h.in",
+    file2 = ":present_native_types_header",
+)
+
+# An available addchdir also uses the replacement with replacement spawn types.
+autoconf_cache(
+    name = "present_replacement_types_inputs",
+    checks = [
+        checks.AC_TRY_COMPILE(
+            name = "ac_cv_func_posix_spawn_file_actions_addchdir",
+            code = "int main(void) { return 0; }",
+            language = "c",
+        ),
+        checks.AC_DEFINE("REPLACE_POSIX_SPAWN", 1),
+        checks.AC_SUBST("HAVE_POSIX_SPAWN", 1),
+    ],
+)
+
+autoconf_cache(
+    name = "present_replacement_types_config",
+    checks = [addchdir_replacement_check()],
+    deps = [":present_replacement_types_inputs"],
+)
+
+autoconf_hdr(
+    name = "present_replacement_types_header",
+    out = "present_replacement_types.h",
+    mode = "subst",
+    template = "subst.h.in",
+    deps = [":present_replacement_types_config"],
+)
+
+diff_test(
+    name = "present_replacement_types_test",
+    file1 = "golden_replacement.h.in",
+    file2 = ":present_replacement_types_header",
+)
+
+# Windows has no native spawn API and therefore no conflicting native declaration.
+autoconf_cache(
+    name = "missing_windows_types_inputs",
+    checks = [
+        checks.AC_TRY_COMPILE(
+            name = "ac_cv_func_posix_spawn_file_actions_addchdir",
+            code = "#error Simulated missing function",
+            language = "c",
+        ),
+        checks.AC_DEFINE("REPLACE_POSIX_SPAWN", 1),
+        checks.AC_SUBST("HAVE_POSIX_SPAWN", 0),
+    ],
+)
+
+autoconf_cache(
+    name = "missing_windows_types_config",
+    checks = [addchdir_replacement_check()],
+    deps = [":missing_windows_types_inputs"],
+)
+
+autoconf_hdr(
+    name = "missing_windows_types_header",
+    out = "missing_windows_types.h",
+    mode = "subst",
+    template = "subst.h.in",
+    deps = [":missing_windows_types_config"],
+)
+
+diff_test(
+    name = "missing_windows_types_test",
+    file1 = "golden_native.h.in",
+    file2 = ":missing_windows_types_header",
+)
